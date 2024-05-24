@@ -1,0 +1,258 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+
+namespace TempElementsLib
+{
+    public interface ITempElement : IDisposable
+    {
+        string Path { get; }
+    }
+
+    public interface ITempFile : ITempElement
+    {
+        Stream FileStream { get; }
+        FileInfo FileInfo { get; }
+    }
+
+    public class TempFile : ITempFile
+    {
+        public string Path { get; private set; }
+        public Stream FileStream { get; private set; }
+        public FileInfo FileInfo { get; private set; }
+
+        public TempFile()
+        {
+            Path = System.IO.Path.GetTempFileName();
+            FileStream = new FileStream(Path, FileMode.Open, FileAccess.ReadWrite);
+            FileInfo = new FileInfo(Path);
+        }
+
+        public TempFile(string fullPath)
+        {
+            if (!File.Exists(fullPath))
+            {
+                Path = fullPath;
+                FileStream = new FileStream(Path, FileMode.OpenOrCreate, FileAccess.ReadWrite);
+                FileInfo = new FileInfo(Path);
+            }
+            else
+            {
+                throw new IOException("File already exists at the specified path.");
+            }
+        }
+
+        public void AddText(string value)
+        {
+            byte[] info = new UTF8Encoding(true).GetBytes(value);
+            FileStream.Write(info, 0, info.Length);
+            FileStream.Flush();
+        }
+
+        public void Dispose()
+        {
+            FileStream.Dispose();
+            File.Delete(Path);
+        }
+
+        ~TempFile()
+        {
+            Dispose();
+        }
+    }
+}
+
+using System;
+
+namespace TempElementsConsoleApp
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            using (var tempFile = new TempElementsLib.TempFile())
+            {
+                tempFile.AddText("Hello, this is a test text.");
+            }
+
+            // After exiting using block, file should be deleted
+
+            try
+            {
+                var tempFile = new TempElementsLib.TempFile();
+                tempFile.AddText("Testing without using block.");
+                tempFile.Dispose();
+
+                // Accessing file after disposal should throw an exception
+                var readBuffer = new byte[1024];
+                tempFile.FileStream.Read(readBuffer, 0, readBuffer.Length);
+            }
+            catch (ObjectDisposedException)
+            {
+                Console.WriteLine("File access after disposal threw ObjectDisposedException.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Exception: {ex.Message}");
+            }
+        }
+    }
+}
+
+public TempTxtFile() : base()
+{
+    _streamWriter = new StreamWriter(TempFilePath);
+    _streamReader = new StreamReader(TempFilePath);
+}
+
+public TempTxtFile(string fullPath) : base(fullPath)
+{
+    _streamWriter = new StreamWriter(TempFilePath);
+    _streamReader = new StreamReader(TempFilePath);
+}
+
+public void Write(string text)
+{
+    _streamWriter.Write(text);
+}
+
+public void WriteLine(string text)
+{
+    _streamWriter.WriteLine(text);
+}
+
+public string ReadLine()
+{
+    return _streamReader.ReadLine();
+}
+
+public string ReadAllText()
+{
+    _streamReader.BaseStream.Seek(0, SeekOrigin.Begin); // move to the beginning of the stream
+    return _streamReader.ReadToEnd();
+}
+
+public override void Dispose()
+{
+    _streamWriter.Flush();
+    _streamWriter.Close();
+    _streamReader.Close();
+    base.Dispose();
+}
+}
+
+}
+using System;
+using System.IO;
+
+namespace TempFileLibrary
+{
+    public interface ITempDir : IDisposable
+    {
+        string Path { get; }
+    }
+
+    public class TempDir : ITempDir
+    {
+        public string Path { get; }
+
+        public TempDir()
+        {
+            Path = System.IO.Path.GetTempPath() + Guid.NewGuid().ToString();
+            Directory.CreateDirectory(Path);
+        }
+
+        public TempDir(string directoryPath)
+        {
+            if (!Directory.Exists(directoryPath))
+            {
+                throw new DirectoryNotFoundException("Specified directory does not exist.");
+            }
+
+            Path = directoryPath + "\\" + Guid.NewGuid().ToString();
+            Directory.CreateDirectory(Path);
+        }
+
+        public void Dispose()
+        {
+            Directory.Delete(Path, true);
+        }
+    }
+}
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+
+public class TempElementsList : ITempElements, IDisposable
+{
+    private List<ITempElement> elements = new List<ITempElement>();
+
+    public IReadOnlyCollection<ITempElement> Elements => elements.AsReadOnly();
+
+    public void AddElement<T>() where T : ITempElement, new()
+    {
+        T element = new T();
+        elements.Add(element);
+    }
+
+    public void MoveElementTo<T>(T element, string newPath) where T : ITempElement
+    {
+        element.MoveTo(newPath);
+    }
+
+    public void DeleteElement<T>(T element) where T : ITempElement
+    {
+        element.Delete();
+        elements.Remove(element);
+    }
+
+    public void RemoveDestroyed()
+    {
+        elements.RemoveAll(element => element.IsDestroyed);
+    }
+
+    public void Dispose()
+    {
+        foreach (var element in elements)
+        {
+            element.Delete();
+        }
+    }
+}
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        TempElementsList tempElementsList = new TempElementsList();
+
+        tempElementsList.AddElement<TempFile>();
+        tempElementsList.AddElement<TempDir>();
+
+        foreach (var element in tempElementsList.Elements)
+        {
+            Console.WriteLine($"Element: {element.Path}");
+        }
+
+        // Przyk adowe przeniesienie elementu
+        if (tempElementsList.Elements.Count > 0)
+        {
+            var element = tempElementsList.Elements.First();
+            tempElementsList.MoveElementTo(element, "newPath");
+        }
+
+        // Przyk adowe usuni cie elementu
+        if (tempElementsList.Elements.Count > 0)
+        {
+            var element = tempElementsList.Elements.First();
+            tempElementsList.DeleteElement(element);
+        }
+
+        tempElementsList.RemoveDestroyed();
+
+        tempElementsList.Dispose();
+
+        Console.WriteLine("Test completed");
+    }
+}
